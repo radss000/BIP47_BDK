@@ -14,4 +14,6 @@ Channel identifier creation: the code uses the bip47 library to generate a new c
 
 Bitcoin address generation: the code uses the bdk library to generate two Bitcoin addresses from the previously generated public keys using the Address::p2pkh() function.
 
-Transaction creation: the code uses the bdk library to create a new Bitcoin transaction with one input and one output. The output is a two-key multisig output created using the Address::script_multisig() function. The input is created by spending the previously created output and using the PrivateKey::sign_multisig() method to sign the transaction with the first private key.
+Transaction creation and verification: the code uses the bdk library to create a new Bitcoin transaction with one input and one output. The output is a two-key multisig output created using the Address::script_multisig() function. The input is created by spending the previously created output and using the PrivateKey::sign_multisig() method to sign the transaction with the first private key.
+
+More features will be added such as payement in other currencies such as BNB or ETH.
