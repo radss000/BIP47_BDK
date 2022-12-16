@@ -64,81 +64,79 @@ fn main() {
     } else {
         println!("La signature de la transaction est invalide");
     }
-    
-    
 
-struct SamouraiWallet {
+    struct SamouraiWallet {
 
-    invoices: HashMap<u32, Invoice>,
-}
-//Structure de données pour déclarer et prendre en charge les ivoices 
-#[derive(Debug)]
-struct Invoice {
-    invoice_number: u32,
-    amount: u64,
-    due_date: String,
-    buyer: String,
-}
-
-impl Wallet {
-
-    fn add_invoice(&mut self, invoice: Invoice) {
-        self.invoices.insert(invoice.invoice_number, invoice);
+        invoices: HashMap<u32, Invoice>,
+    }
+    //Structure de données pour déclarer et prendre en charge les ivoices 
+    #[derive(Debug)]
+    struct Invoice {
+        invoice_number: u32,
+        amount: u64,
+        due_date: String,
+        buyer: String,
     }
 
-    fn get_invoice(&self, invoice_number: u32) -> Option<&Invoice> {
-        self.invoices.get(&invoice_number)
-    }
-}
+    impl Wallet {
 
-fn main() {
-    let mut wallet = Wallet {
-        invoices: HashMap::new(),
-    };
+        fn add_invoice(&mut self, invoice: Invoice) {
+            self.invoices.insert(invoice.invoice_number, invoice);
+        }
 
-    // Ajouter une nouvelle invoice
-    let invoice = Invoice {
-        invoice_number: 1,
-        amount: 100,
-        due_date: "2022-12-31".to_string(),
-        buyer: "John Doe".to_string(),
-    };
-    wallet.add_invoice(invoice);
-
-    // Rechercher une invoice par son numéro
-    let invoice_number = 1;
-    let invoice = wallet.get_invoice(invoice_number);
-    if let Some(invoice) = invoice {
-        println!("Invoice trouvée : {:?}", invoice);
-    } else {
-        println!("Invoice introuvable pour le numéro de facture {}", invoice_number);
-    }
-}
-
-//Prise en charge des comptes connectés à l'appareil 
-
-struct SamouraiWallet {
-    
-
-    accounts: HashMap<String, Account>,
-}
-
-#[derive(Debug)]
-struct Account {
-    username: String,
-    email: String,
-    private_key: PrivateKey,
-    public_key: PublicKey,
-}
-
-impl SamouraiWallet {
-
-
-    fn add_account(&mut self, account: Account) {
-        self.accounts.insert(account.username.clone(), account);
+        fn get_invoice(&self, invoice_number: u32) -> Option<&Invoice> {
+            self.invoices.get(&invoice_number)
+        }
     }
 
-    fn get_account(&self, username: &str) -> Option<&Account> {
-        self.accounts.get(username)
+    fn main() {
+        let mut wallet = Wallet {
+            invoices: HashMap::new(),
+        };
+
+        // Ajouter une nouvelle invoice
+        let invoice = Invoice {
+            invoice_number: 1,
+            amount: 100,
+            due_date: "2022-12-31".to_string(),
+            buyer: "John Doe".to_string(),
+        };
+        wallet.add_invoice(invoice);
+
+        // Rechercher une invoice par son numéro
+        let invoice_number = 1;
+        let invoice = wallet.get_invoice(invoice_number);
+        if let Some(invoice) = invoice {
+            println!("Invoice trouvée : {:?}", invoice);
+        } else {
+            println!("Invoice introuvable pour le numéro de facture {}", invoice_number);
+        }
     }
-}
+
+    //Prise en charge des comptes connectés 
+
+    struct SamouraiWallet {
+
+
+        accounts: HashMap<String, Account>,
+    }
+
+    #[derive(Debug)]
+    struct Account {
+        username: String,
+        email: String,
+        private_key: PrivateKey,
+        public_key: PublicKey,
+    }
+
+    impl SamouraiWallet {
+
+
+        fn add_account(&mut self, account: Account) {
+            self.accounts.insert(account.username.clone(), account);
+        }
+
+        fn get_account(&self, username: &str) -> Option<&Account> {
+            self.accounts.get(username)
+        }
+    }
