@@ -1,142 +1,147 @@
-use bip47::{ChannelId, PaymentCode, SharedSecret};
-use bdk::{Address, PrivateKey, PublicKey, Transaction, TransactionInput, TransactionOutput, SigHashType};
-use std::collections::HashMap;
+use bdk::bitcoin::secp256k1::Secp256k1;
+use bdk::bitcoin::util::bip32::{DerivationPath, KeySource};
+use bdk::bitcoin::Amount;
+use bdk::bitcoin::Network;
+use bdk::bitcoincore_rpc::jsonrpc::serde_json::Value;
+use bdk::bitcoincore_rpc::{Auth as rpc_auth, Client, RpcApi};
 
+use bdk::blockchain::rpc::{Auth, RpcBlockchain, RpcConfig};
+use bdk::blockchain::{ConfigurableBlockchain, NoopProgress};
+
+use bdk::keys::bip39::{Language, Mnemonic, WordCount};
+use bdk::keys::DescriptorKey::Secret;
+use bdk::keys::{DerivableKey, DescriptorKey, ExtendedKey, GeneratableKey, GeneratedKey};
+
+use bdk::miniscript::miniscript::Segwitv0;
+
+use bdk::wallet::{signer::SignOptions, wallet_name_from_descriptor, AddressIndex};
+use bdk::{Wallet, SyncOptions};
+
+use bdk::sled;
+
+use std::str::FromStr;
 
 fn main() {
-    // Générer deux nouvelles clés privées et publiques
-    let private_key1 = PrivateKey::new();
-    let public_key1 = PublicKey::from_private(&private_key1);
-    let private_key2 = PrivateKey::new();
-    let public_key2 = PublicKey::from_private(&private_key2);
+    // Create a RPC interface
+    let rpc_auth = rpc_auth::UserPass("lnd".to_string(), "lightning".to_string());
+    let core_rpc = Client::new("http://127.0.0.1:18443/wallet/test", rpc_auth).unwrap();
+    // println!("{:#?}", core_rpc.get_blockchain_info().unwrap());
 
-    // Générer un nouveau code de paiement à partir de la première clé publique
-    let payment_code1 = PaymentCode::from_public_key(&public_key1);
+    // Create the test wallet
+    // core_rpc.create_wallet("test", None, None, None, None).unwrap();
+    let args = [
+        Value::String(String::from("test")),
+        Value::Bool(false),
+        Value::Bool(false),
+        Value::Null,
+        Value::Bool(false),
+        Value::Bool(false),
+        Value::Bool(true),
+        Value::Bool(false),
+    ];
+    let _: Value = core_rpc.call("createwallet", &args).unwrap();
 
-    // Générer un nouveau code de paiement à partir de la deuxième clé publique
-    let payment_code2 = PaymentCode::from_public_key(&public_key2);
+    // Get a new address
+    // let core_address = core_rpc.get_new_address(None, None).unwrap();
 
-    // Échanger les codes de paiement pour créer un secret partagé
-    let shared_secret = SharedSecret::new(&payment_code1, &payment_code2);
+    // Generate 101 blocks and use the above address as coinbase
+    // core_rpc.generate_to_address(101, &core_address).unwrap();
 
-    // Générer un nouvel identifiant de canal à partir du secret partagé
-    let channel_id = ChannelId::from_shared_secret(&shared_secret);
+    // fetch the new balance
+    let core_balance = core_rpc.get_balance(None, None).unwrap();
 
-    // Générer deux adresses Bitcoin à partir des clés publiques
-    let address1 = Address::p2pkh(&public_key1, false);
-    let address2 = Address::p2pkh(&public_key2, false);
+    // Show balance
+    println!("core balance: {:#?}", core_balance);
 
-    // Créer une nouvelle tx de sortie multisig à deux clés
-    let output = TransactionOutput {
-        value: 1000,
-        script_pubkey: address1.script_multisig(2, vec![public_key1.to_bytes(), public_key2.to_bytes()]),
+    let (receive_desc, change_desc) = get_descriptors();
+
+    // Use deterministic wallet name derived from descriptor
+    let wallet_name = wallet_name_from_descriptor(
+        &receive_desc,
+        Some(&change_desc),
+        Network::Regtest,
+        &Secp256k1::new(),
+    )
+    .unwrap();
+
+    // Create the datadir to store wallet data
+    let mut datadir = dirs_next::home_dir().unwrap();
+    datadir.push(".bdk-example");
+    let database = sled::open(datadir).unwrap();
+    let db_tree = database.open_tree(wallet_name.clone()).unwrap();
+
+    // Set RPC username, password and url
+    let auth = Auth::UserPass {
+        username: "lnd".to_string(),
+        password: "lightning".to_string(),
+    };
+    let mut rpc_url = "http://".to_string();
+    rpc_url.push_str("127.0.0.1:18443");
+
+    // Setup the RPC configuration
+    let rpc_config = RpcConfig {
+        url: rpc_url,
+        auth,
+        network: Network::Regtest,
+        wallet_name,
+        skip_blocks: None,
     };
 
-    // Créer une nouvelle txn d'entrée en dépensant la sortie précédemment créée
-    let input = TransactionInput {
-        previous_output: None,
-        script_sig: private_key1.sign_multisig(
-            &output.script_pubkey,
-            SigHashType::All,
-            0,
-            &[private_key1.public_key().to_bytes()],
-        ).script_sig(),
-        sequence: 0xffffffff,
-    };
+    // Use the above configuration to create a RPC blockchain backend
+    let blockchain = RpcBlockchain::from_config(&rpc_config).unwrap();
 
-    //Créer une tx en utilisant l'inpu et output crées 
-    let tx = Transaction {
-        version: 1,
-        inputs: vec![input],
-        outputs: vec![output],
-        lock_time: 0,
-    };
-    // Vérifier la signature de la tx
-    let result = tx.inputs[0].verify_multisig(
-        &tx,
-        0,
-        &output.script_pubkey,
-        &[public_key1.to_bytes(), public_key2.to_bytes()],
-    );
+    // Combine everything and finally create the BDK wallet structure
+    let wallet = Wallet::new(&receive_desc, Some(&change_desc), Network::Regtest, db_tree).unwrap();
 
-    if result {
-        println!("La signature de la transaction est valide");
-    } else {
-        println!("La signature de la transaction est invalide");
-    }
+    // Sync the wallet
+    wallet.sync(&blockchain, SyncOptions::default()).unwrap();
 
-    struct SamouraiWallet {
+    // Fetch a fresh address to receive coins
+    let address = wallet.get_address(AddressIndex::New).unwrap().address;
 
-        invoices: HashMap<u32, Invoice>,
-    }
-    //Structure de données pour déclarer et prendre en charge les ivoices 
-    #[derive(Debug)]
-    struct Invoice {
-        invoice_number: u32,
-        amount: u64,
-        due_date: String,
-        buyer: String,
-    }
+    println!("bdk address: {:#?}", address);
 
-    impl Wallet {
+    // println!("recv: {:#?}, \nchng: {:#?}", receive_desc, change_desc);
+}
 
-        fn add_invoice(&mut self, invoice: Invoice) {
-            self.invoices.insert(invoice.invoice_number, invoice);
-        }
+// generate fresh descriptor strings and return them via (receive, change) tuple
+fn get_descriptors() -> (String, String) {
+    // Create a new secp context
+    let secp = Secp256k1::new();
 
-        fn get_invoice(&self, invoice_number: u32) -> Option<&Invoice> {
-            self.invoices.get(&invoice_number)
+    // You can also set a password to unlock the mnemonic
+    let password = Some("random password".to_string());
+
+    // Generate a fresh mnemonic, and from there a privatekey
+    let mnemonic: GeneratedKey<_, Segwitv0> =
+        Mnemonic::generate((WordCount::Words12, Language::English)).unwrap();
+    let mnemonic = mnemonic.into_key();
+    let xkey: ExtendedKey = (mnemonic, password).into_extended_key().unwrap();
+    let xprv = xkey.into_xprv(Network::Regtest).unwrap();
+
+    // Create derived privkey from the above master privkey
+    // We use the following derivation paths for receive and change keys
+    // receive: "m/84h/1h/0h/0"
+    // change: "m/84h/1h/0h/1"
+    let mut keys = Vec::new();
+
+    for path in ["m/84h/1h/0h/0", "m/84h/1h/0h/1"] {
+        let deriv_path: DerivationPath = DerivationPath::from_str(path).unwrap();
+        let derived_xprv = &xprv.derive_priv(&secp, &deriv_path).unwrap();
+        let origin: KeySource = (xprv.fingerprint(&secp), deriv_path);
+        let derived_xprv_desc_key: DescriptorKey<Segwitv0> = derived_xprv
+            .into_descriptor_key(Some(origin), DerivationPath::default())
+            .unwrap();
+
+        // Wrap the derived key with the wpkh() string to produce a descriptor string
+        if let Secret(key, _, _) = derived_xprv_desc_key {
+            let mut desc = "wpkh(".to_string();
+            desc.push_str(&key.to_string());
+            desc.push_str(")");
+            keys.push(desc);
         }
     }
 
-    fn main() {
-        let mut wallet = Wallet {
-            invoices: HashMap::new(),
-        };
-
-        // Ajouter une nouvelle invoice
-        let invoice = Invoice {
-            invoice_number: 1,
-            amount: 100,
-            due_date: "2022-12-31".to_string(),
-            buyer: "John Doe".to_string(),
-        };
-        wallet.add_invoice(invoice);
-
-        // Rechercher une invoice par son numéro
-        let invoice_number = 1;
-        let invoice = wallet.get_invoice(invoice_number);
-        if let Some(invoice) = invoice {
-            println!("Invoice trouvée : {:?}", invoice);
-        } else {
-            println!("Invoice introuvable pour le numéro de facture {}", invoice_number);
-        }
-    }
-
-    //Prise en charge des comptes connectés 
-
-    struct SamouraiWallet {
-
-
-        accounts: HashMap<String, Account>,
-    }
-
-    #[derive(Debug)]
-    struct Account {
-        username: String,
-        email: String,
-        private_key: PrivateKey,
-        public_key: PublicKey,
-    }
-
-    impl SamouraiWallet {
-
-
-        fn add_account(&mut self, account: Account) {
-            self.accounts.insert(account.username.clone(), account);
-        }
-
-        fn get_account(&self, username: &str) -> Option<&Account> {
-            self.accounts.get(username)
-        }
-    }
+    // Return the keys as a tuple
+    (keys[0].clone(), keys[1].clone())
+}
