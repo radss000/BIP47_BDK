@@ -1,6 +1,6 @@
 # BIP47_BDK
 
-This code implements a Samourai Wallet, which is a wallet for managing Bitcoin transactions and invoices.
+The first branch (Samourai) code implements a Samourai Wallet, which is a wallet for managing Bitcoin transactions and invoices.
 
 There are several parts to this code:
 
@@ -17,3 +17,5 @@ Features are coming such as:
 - Tracking the current value of the user's cryptocurrency assets.
 - Feature for backing up and restoring the wallet. This could allow users to protect their assets in case they lose access to their device or wallet.
 And much more !
+
+The second one is designed to run on a local Bitcoin Core node with an RPC interface. It generates a new wallet and Bitcoin address, allowing the user to receive and store Bitcoin.
